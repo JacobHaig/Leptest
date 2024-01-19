@@ -1,183 +1,69 @@
-use leptos::*;
+#[cfg(feature = "ssr")]
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    use actix_files::Files;
+    use actix_web::*;
+    use leptos::*;
+    use leptos_actix::{generate_route_list, LeptosRoutes};
+    use spotrs::app::*;
 
-use styled::style;
+    let conf = get_configuration(None).await.unwrap();
+    let addr = conf.leptos_options.site_addr;
+    // Generate the list of routes in your Leptos App
+    let routes = generate_route_list(App);
+    println!("listening on http://{}", &addr);
 
-struct Song {
-    index: u32,
-    image_url: String,
-    title: String,
-    artist: String,
-    song_length: u32,
+    HttpServer::new(move || {
+        let leptos_options = &conf.leptos_options;
+        let site_root = &leptos_options.site_root;
+
+        App::new()
+            .route("/api/{tail:.*}", leptos_actix::handle_server_fns())
+            // serve JS/WASM/CSS from `pkg`
+            .service(Files::new("/pkg", format!("{site_root}/pkg")))
+            // serve other assets from the `assets` directory
+            .service(Files::new("/assets", site_root))
+            // serve the favicon from /favicon.ico
+            .service(favicon)
+            .leptos_routes(leptos_options.to_owned(), routes.to_owned(), App)
+            .app_data(web::Data::new(leptos_options.to_owned()))
+        //.wrap(middleware::Compress::default())
+    })
+    .bind(&addr)?
+    .run()
+    .await
 }
 
-#[component]
-fn Song_card(
-    index: u32,
-    image_url: String,
-    title: String,
-    artist: String,
-    song_length: u32,
-) -> impl IntoView {
-    // convert song_length seconds into minutes and seconds format
-    let minutes = song_length / 60;
-    let seconds = song_length % 60;
-    let song_length = format!("{}:{}", minutes, seconds);
-
-    let styles = style!(
-        .song_card {
-            display: flex;
-            flex-direction: row;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px;
-            border: 1px solid black;
-            border-radius: 5px;
-            // margin: 10px;
-            background-color: green;
-            color: white;
-        }
-        .song_card_image {
-            width: 20px;
-            height: 20px;
-            border-radius: 5px;
-            // margin-right: 10px;
-        }
-    );
-
-    styled::view! {
-        styles,
-        <div class="song_card">
-            <div class="song_card_index">{ index }</div>
-            <img class="song_card_image" src= image_url />
-            <div class="song_card_title">{ title }</div>
-            <div class="song_card_artist">{ artist }</div>
-            <div class="song_card_length">{ song_length }</div>
-            // <button on:click= move |_| set_is_playing(!is_playing.get()) >{ if is_playing.get() { "Pause" } else { "Play" } }</button>
-        </div>
-    }
-}
-#[component]
-fn Song_Panel() -> impl IntoView {
-    // list of songs for testing
-    let songs = vec![
-        Song {
-            index: 1,
-            image_url: "https://imgs.search.brave.com/2-_CNDuVoC-zJ89WVorCJJhgQE90AMUDyv1rYDDgGUQ/rs:fit:860:0:0/g:ce/aHR0cHM6Ly9jZG4t/aWNvbnMtcG5nLmZs/YXRpY29uLmNvbS8x/MjgvMjY1OS8yNjU5/MzYwLnBuZw".to_string(),
-            title: "Song 1".to_string(),
-            artist: "Artist 1".to_string(),
-            song_length: 136,
-        },
-        Song {
-            index: 2,
-            image_url: "https://imgs.search.brave.com/2-_CNDuVoC-zJ89WVorCJJhgQE90AMUDyv1rYDDgGUQ/rs:fit:860:0:0/g:ce/aHR0cHM6Ly9jZG4t/aWNvbnMtcG5nLmZs/YXRpY29uLmNvbS8x/MjgvMjY1OS8yNjU5/MzYwLnBuZw".to_string(),
-            title: "Song 2".to_string(),
-            artist: "Artist 2".to_string(),
-            song_length: 10,
-        },
-        Song {
-            index: 3,
-            image_url: "https://imgs.search.brave.com/2-_CNDuVoC-zJ89WVorCJJhgQE90AMUDyv1rYDDgGUQ/rs:fit:860:0:0/g:ce/aHR0cHM6Ly9jZG4t/aWNvbnMtcG5nLmZs/YXRpY29uLmNvbS8x/MjgvMjY1OS8yNjU5/MzYwLnBuZw".to_string(),
-            title: "Song 3".to_string(),
-            artist: "Artist 3".to_string(),
-            song_length: 543,
-        },
-    ];
-
-    let styles = style!(
-        padding: 10px;
-        background-color: red;
-        color: white;
-    );
-
-    styled::view! {
-        styles,
-        <div>
-            <p>"Song Panel"</p>
-
-            <div>
-            {  songs.iter().map(|song|
-                view! {
-                    <Song_card
-                        index= song.index
-                        image_url= song.image_url.clone()
-                        title= song.title.clone()
-                        artist= song.artist.clone()
-                        song_length= song.song_length
-                    />
-                }).collect_view()
-            }
-        </div>
-        </div>
-    }
+#[cfg(feature = "ssr")]
+#[actix_web::get("favicon.ico")]
+async fn favicon(
+    leptos_options: actix_web::web::Data<leptos::LeptosOptions>,
+) -> actix_web::Result<actix_files::NamedFile> {
+    let leptos_options = leptos_options.into_inner();
+    let site_root = &leptos_options.site_root;
+    Ok(actix_files::NamedFile::open(format!(
+        "{site_root}/favicon.ico"
+    ))?)
 }
 
-#[component]
-fn Search() -> impl IntoView {
-    let (name, set_name) = create_signal("Controlled".to_string());
-
-    let set_name_fn = move |ev| {
-        // event_target_value is a Leptos helper function it functions the same way as event.target.value
-        // in JavaScript, but smooths out some of the typecasting necessary to make this work in Rust
-        // console_log(&format!("{:?}", &ev.));
-        set_name(event_target_value(&ev));
-    };
-
-    let styles = style!(
-        padding: 10px;
-        background-color: blue;
-        color: white;
-    );
-
-    styled::view! {
-        styles,
-        <div>
-            <p>"Search"</p>
-            <input type="text"
-                on:input=set_name_fn
-                prop:value=name // the `prop:` syntax lets you update a DOM property, rather than an attribute.
-            />
-        </div>
-    }
+#[cfg(not(any(feature = "ssr", feature = "csr")))]
+pub fn main() {
+    // no client-side main function
+    // unless we want this to work with e.g., Trunk for pure client-side testing
+    // see lib.rs for hydration function instead
+    // see optional feature `csr` instead
 }
 
-#[component]
-fn Current_Song_Panel() -> impl IntoView {
-    let styles = style!(
-        // padding: 10px;
-        background-color: blue;
-        color: white;
-        width: 100%;
-        // position the panel at the bottom of the screen
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        height: 50px;
+#[cfg(all(not(feature = "ssr"), feature = "csr"))]
+pub fn main() {
+    // a client-side main function is required for using `trunk serve`
+    // prefer using `cargo leptos serve` instead
+    // to run: `trunk serve --open --features csr`
+    use leptos::*;
+    use spotrs::app::*;
+    use wasm_bindgen::prelude::wasm_bindgen;
 
-    );
+    console_error_panic_hook::set_once();
 
-    styled::view! {
-        styles,
-        <div>
-            <p>"Current Song Panel"</p>
-        </div>
-    }
-}
-
-#[component]
-fn App() -> impl IntoView {
-    let (count, set_count) = create_signal(0);
-
-    view! {
-        <div>
-            <p>"Count: "{ count }</p>
-            <button on:click= move |_| set_count(count.get() + 1) >"Increment"</button>
-            <Search/>
-            <Song_Panel/>
-            <Current_Song_Panel/>
-        </div>
-    }
-}
-
-fn main() {
-    mount_to_body(|| view! { <App/> })
+    leptos::mount_to_body(App);
 }
