@@ -1,4 +1,5 @@
 pub mod app;
+mod ui;
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -10,6 +11,7 @@ if #[cfg(feature = "hydrate")] {
     pub fn hydrate() {
       use app::*;
       use leptos::*;
+      use ui::*;
 
       console_error_panic_hook::set_once();
 
